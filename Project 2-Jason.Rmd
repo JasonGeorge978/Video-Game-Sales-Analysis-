@@ -1,0 +1,348 @@
+---
+title: "Project 2"
+author: "Jason George"
+output:   
+ html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 5
+---
+
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.height=3, fig.width=4, warning=FALSE, message=FALSE, tidy=TRUE, echo=FALSE, tidy.opts=list(width.cutoff=60))
+```
+
+```{r echo=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+library(kableExtra)
+vgsales <- read.csv("vgsales.csv")
+
+#Function to make a formatted table
+my_nice_table <- function(your_table, nice_title) {
+  nice <- kable(your_table, col.names = colnames(your_table), caption = nice_title, row.names = FALSE)
+  nice_format <- kable_classic(nice, full_width = TRUE, lightable_options = "striped", html_font = "sans-serif")
+  
+  return(nice_format)
+}
+```
+
+### **1. Introduction**
+
+This dataset provides information on video games that have sold over 100,000 copies, sourced from [vgchartz.com](https://www.vgchartz.com/) and was found on [Kaggle](https://www.kaggle.com/datasets/gregorut/videogamesales/data). It includes various fields, such as the game’s rank, name, platform, release year, genre, publisher, and sales (in millions) across regions like North America, Europe, Japan, and other parts of the world, along with global sales totals. I chose this dataset because I love video games and wanted to see what correlates to becoming a successful video game.I’m going to investigate how publishers, platforms, and genres' effects video game sales.
+
+This is an example of the rank 1 game on this data set Wii Sports.
+
+![Nintendo's Wii Sports](https://media.auchan.fr/c2e3a904-fa39-4a6e-94f2-d590d883ba1d_256x256/B2CD/)
+
+*Source: [Auchan.fr](https://www.auchan.fr/wii-sports-nintendo-selects/pr-C378104)*
+
+### **2. Data Preparation**
+
+First Step: I obtained the dataset straight from Kaggle.
+
+Second Step: Went into Excel and replaced all PokÃ©mon with Pokemon
+
+Third Step: Normalizing games by Franchise: This would combine games with similar titles together with there corresponding summed sales
+
+```{r}
+# Function to normalize the name of a video game
+change_name <- function(name) {
+  # Convert the name to lowercase
+  name <- str_to_lower(name)
+  # Remove punctuation like commas, periods, question marks, exclamation marks, colons, and newline characters
+  name <- str_replace_all(name, "[,\\.\\?!\\n:]", "")
+  # Remove 's 
+  name <- str_replace_all(name, "\'s", "")
+  # Split the name into words
+  words <- unlist(str_split(name, "\\s+"))
+  
+  # List of  keywords for identifying franchises
+  keywords <- c("pokemon", "animal", "12-sai", "3d", "4x4", "air", "alien", "amf", "backyard",
+                "bakugan", "bakusou", "banjo-kazooie", "barbie", "batman", "battlefield",
+                "bakumatsu", "bayonetta", "battlezone", "bayonetta")
+  
+  # Check if the first word of the name matches any of the keywords
+  if (length(words) > 0 && words[1] %in% keywords) {
+    normalized <- words[1]
+  # If the first word is numeric, use it as the normalized name
+  } else if (length(words) > 0 && str_detect(words[1], "^[0-9]+$")) {
+    normalized <- words[1]
+  # If none of the above, use the first two words as the normalized name
+  } else {
+    if (length(words) >= 2) {
+      normalized <- paste(words[1:2], collapse = " ")
+    # If only one word exists, use it as the normalized name
+    } else {
+      normalized <- words[1]
+    }
+  }
+  
+  return(normalized) # Return the normalized name
+}
+
+# Create an empty vector to store the franchise names
+franchise_names <- character(nrow(vgsales))
+
+# Loop through each row in the vgsales dataset to normalize game names
+for (i in 1:nrow(vgsales)) {
+  franchise_names[i] <- change_name(vgsales$Name[i])
+}
+
+# Add the normalized franchise names to the vgsales dataset as a new column
+vgsales$Franchise <- franchise_names
+
+# Group the dataset by the Franchise column
+franchise_sales <- group_by(vgsales, Franchise)
+
+# Summarize the sales data for each franchise by summing sales across regions
+franchise_sales <- summarize(franchise_sales,
+  NA_Sales = sum(NA_Sales),       # Total North America sales
+  EU_Sales = sum(EU_Sales),       # Total Europe sales
+  JP_Sales = sum(JP_Sales),       # Total Japan sales
+  Other_Sales = sum(Other_Sales), # Total sales in other regions
+  Global_Sales = sum(Global_Sales) # Total global sales
+)
+
+```
+
+Fourth Step: Isolate Top 500 Franchise by Sales: This would arrange the dataset by Global Sales and only contain the 500 with the greatest sales. Then I combinded the Top 500 dataset with the original to get the genre,rank,platform,year,publisher, and name variables back.
+
+```{r}
+# Arranged the franchise data in descending order by Global Sales 
+Top_500 <- arrange(franchise_sales, desc(Global_Sales))
+
+# Top 500 highest global sales
+Top_500 <- Top_500[1:500,]
+
+# This combines vgsales and Top500 by the Franchise column 
+Total_Top_500 <- left_join(Top_500,vgsales, by ='Franchise')
+
+write.csv(Top_500,file="Top_500.csv",row.names= FALSE)
+write.csv(Total_Top_500, file="Total_Top_500.csv",row.names = FALSE)
+```
+
+Last Step: Create Subset of Sales and Rank per Genre/Publisher/Platform: Then lastly I grouped the new dataset by Genre, Publisher, and Platform to their sales to see the relation between those factors and a games sales.
+
+```{r}
+# This groups by Platform, Genre, and Publisher 
+Genre_Publisher_Platform_Rank_Sales <- group_by(Total_Top_500, Platform,Genre,Publisher)
+
+# Summarize the grouped data by calculating the sums below 
+Genre_Publisher_Platform_Rank_Sales <- summarize(Genre_Publisher_Platform_Rank_Sales, 
+  Avg_Rank = round(mean(Rank)),
+  Total_NA_Sales = sum(NA_Sales.y),
+  Total_EU_Sales = sum(EU_Sales.y),
+  Total_JP_Sales = sum(JP_Sales.y),
+  Total_Other_Sales = sum(Other_Sales.y),
+  Total_Global_Sales = sum(Global_Sales.y)
+)
+write.csv(Genre_Publisher_Platform_Rank_Sales, file="GPPRS.csv",row.names = FALSE)
+
+```
+
+These are the three datasets I'll be using for the rest of this project: Top_500 (`r nrow(Top_500)` objects), Total_Top_500 (`r nrow(Total_Top_500)` objects), and lastly Genre_Publisher_Platform_Rank_Sales(`r nrow(Genre_Publisher_Platform_Rank_Sales)` objects)
+
+### **3. Variable Descriptions**
+
+```{r echo=FALSE}
+#These are descriptions
+words1 = c("Franchise is the franchise name",
+    "NA_Sales is the sales in North America in millions",
+    "EU_Sales is the sales in Europe in millions",
+    "JP_Sales is the sales in Japan in millions",
+    "Other_Sales is the sales in rest of the world in millions",
+    "Global_Sales is the total sales in millions")
+words2 = c("Franchise is the franchise name",
+    "NA_Sales.x is the sales per franchise in North America in millions",
+    "EU_Sales.x is the sales per franchise in Europe in millions",
+    "JP_Sales.x is the sales per franchise in Japan in millions",
+    "Other_Sales.x is the sales per franchise in rest of the world in millions",
+    "Global_Sales.x is the total global sales for the franchise in millions","Rank is the Rank of each game","Name is the name of the game","Platform is the platform used to play the game","Year is the year it was released","Genre is the type of game","Publisher is who created the game","NA_Sales.y is the sales for that game in North America in millions",
+    "EU_Sales.y is the sales for that game in Europe in millions",
+    "JP_Sales.y is the sales for that game in Japan in millions",
+    "Other_Sales.y is the sales for that game in rest of the world in millions",
+    "Global_Sales.y is the total global sales for that game in millions")
+words3 = c("Platform is the platform used to play the game","Genre is the type of game","Publisher is who created the game","Avg_Rank is the average rank given to games based on the respective genre, platform, and publisher","Total_NA_Sales.x is the sales for a game based on the genre, platform, and publisher in North America in millions","Total_EU_Sales.x is the sales for a game based on the genre, platform, and publisher in Europe in millions","Total_JP_Sales.x is the sales for a game based on the genre, platform, and publisher in Japan in millions","Total_Other_Sales.x is the sales for a game based on the genre, platform, and publisher in rest of the world in millions","Total_Global_Sales.x is the sales for a game based on the genre, platform, and publisher in the world in millions")
+```
+
+```{r}
+# Function to make a table 
+make_table <- function(data, Description, title="Title") {
+  mytable <- data.frame(
+    Variable = names(data), # Variable name
+    Type = sapply(data, class), # Variable type
+    Description = Description # Variable Descriptions
+  )
+  table <- my_nice_table(mytable, nice_title = title)
+  
+  return(table)
+}
+
+# Make these tables
+make_table(Top_500,Description = words1 ,title = "Top 500 Franchises Description Table")
+
+make_table(Total_Top_500,Description = words2 ,title = "Top 500 Description Table With All Game Titles and Respective their Sales ")
+
+make_table(Genre_Publisher_Platform_Rank_Sales, Description = words3 ,title = "Description Table of Games and their Sales and Rank Based Of Genre, Platform, and Publisher")
+```
+
+### **4. Univariate Analyses**
+
+```{r fig.width=20,fig.height=8}
+# Make graph
+ ggplot(Total_Top_500) + geom_bar(aes(x=Franchise),fill= "tomato", color="black") + labs(title ="Frequency of Franchise from the Total_Top_500 Data Set", x="Franchise") + theme_minimal()+ theme(axis.text.x = element_text(angle=45,hjust =1)) 
+
+
+names(which.max(table(Total_Top_500$Franchise)))# Highest Count of Franchise
+max(table(Total_Top_500$Franchise))# Highest count of Franchise
+round(mean(table(Total_Top_500$Franchise)),2)# Average 
+round(sd(table(Total_Top_500$Franchise)),2)# SD
+```
+
+The graph shows very scattered and random distribution with very high peaks and very low mins. The highest peak is found at madden nfl at `r max(table(Total_Top_500$Franchise))` times. Which means despite having 96 games combined to create it, it only placed top 5 in sales. The average amount of games very franchise was `r round(mean(table(Total_Top_500$Franchise)),2)` and there was a remotely large standard deviation of `r round(sd(table(Total_Top_500$Franchise)),2)`.
+
+```{r fig.width=6}
+# Make graphs
+ ggplot(Top_500) + geom_histogram(aes(x=Global_Sales),fill= "tomato", color="black",binwidth = 10) + labs(title ="Frequency of Global Sales in Millions ", x="Global Sales (millions in $)",y="Frequency") + theme_minimal()+ theme(axis.text.x = element_text(angle=45,hjust =1)) 
+round(sd(Top_500$Global_Sales),2)# sd
+round(summary(Top_500$Global_Sales),2)# five number summary
+
+```
+
+This graph is right skewed as there were very few games that reached the hundreds of millions. There was a high standard deviation of `r round(sd(Top_500$Global_Sales),2)` which means sales are deviating from the mean by \$25 million dollars. If you see above you can see the distribution of the data from the min to the max.
+
+```{r fig.width=6}
+# Make Graph
+ggplot(Total_Top_500) + geom_bar(aes(x=Genre),fill= "turquoise", color="black") + labs(title ="Counts of Genres ", x="Genre",y="Count") + theme_minimal()+ theme(axis.text.x = element_text(angle=45,hjust =1)) 
+
+round(fivenum(table(Total_Top_500$Genre)),2)# Five num summary
+round(mean(table(Total_Top_500$Genre)),2)# mean 
+round(sd(table(Total_Top_500$Genre)),2)# sd
+```
+
+This graph is bimodal, with Action and Sports games being the most common. Puzzle games were the least common at 70. The mean is `r round(mean(table(Total_Top_500$Genre)),2)` with a huge deviation from the mean of 380.
+
+```{r fig.width=6}
+# Make graph
+ggplot(Total_Top_500) + geom_bar(aes(x=Platform),fill= "turquoise", color="black") + labs(title ="Counts of Platforms ", x="Platform",y="Count") + theme_minimal()+ theme(axis.text.x = element_text(angle=45,hjust =1))
+
+round(fivenum(table(Total_Top_500$Platform)),2)# Five number summary
+round(mean(table(Total_Top_500$Platform)),2)# mean
+round(sd(table(Total_Top_500$Platform)),2)# Sd
+```
+
+The graph has random distribution. GG was the least used platform at 1, with the most used platform at the top 500 being 718. The average amount of a platform used was 205 with a standard deviation of 202.
+
+### **5. Multivariate Analyses**
+
+#### **Total Global Sales Based on Rank and Genre Graph**
+
+```{r fig.height=4,fig.width=6}
+# Make graph
+ ggplot(Genre_Publisher_Platform_Rank_Sales) + geom_point(aes(x=-Avg_Rank,y=Total_Global_Sales,color=Genre),pch=20,alpha=0.5)+ theme_minimal() + labs(title="Total Global Sales Based on Rank and Genre",x="Average Rank", y="Total Global Sales (millions in $)")
+```
+
+The graph is skewed left and increases rapidly as rank approaches 0. It shows a higher likelihood to have higher sales as rank is lower. This can seen with the correlation value of `r cor(Genre_Publisher_Platform_Rank_Sales$Avg_Rank,Genre_Publisher_Platform_Rank_Sales$Total_Global_Sales)`. Below is a table showing a table with the 8 highest Genres with their mean sales.
+
+##### **Descriptive Stats**
+
+```{r}
+cor(Genre_Publisher_Platform_Rank_Sales$Avg_Rank,Genre_Publisher_Platform_Rank_Sales$Total_Global_Sales)
+
+df <- aggregate(Total_Global_Sales~Genre,data=Genre_Publisher_Platform_Rank_Sales,FUN=mean)
+
+df <- head(df,n=8)
+
+my_nice_table(your_table=df,nice_title = "Mean Global Sales per Genre")
+
+```
+
+#### **Average Rank Based on Platform and Genre**
+
+```{r fig.width=23,fig.height=8}
+# Make graph
+ggplot(Genre_Publisher_Platform_Rank_Sales) + geom_col(aes(x= Platform,y=-Avg_Rank,fill=Total_Global_Sales))+ theme_minimal() + labs(title="Average Rank Based on Platform and Genre",x="Platform", y="Average Rank") + facet_wrap(~ Genre, scales = "free") +  scale_fill_gradient(low = "lightblue", high = "darkblue")
+```
+
+The graphs shows rank vs platform with color varying with global sales. From the graph you can Shooter and Sports genres have the highest sales as seen with the dark lines. The table below shows mean rank by platform.
+
+##### **Descriptive Stats**
+
+```{r}
+# This makes two columns mean rank and platform
+df2 <- aggregate(Avg_Rank~Platform,data=Genre_Publisher_Platform_Rank_Sales,FUN=mean)
+
+df2 <- head(df2,n=8)
+
+my_nice_table(your_table=df2,nice_title = "Mean Rank vs Platform")
+
+```
+
+#### **Genre vs Sales Throughout the World**
+
+```{r fig.width=9}
+#Make graph 
+ggplot(Total_Top_500) + geom_col(aes(x=Genre, y=Global_Sales.y,fill="Global_Sales"),alpha=0.5)+ geom_col(aes(x=Genre,y=NA_Sales.y,fill="NA_Sales"),alpha=0.5)+ geom_col(aes(x=Genre,y=EU_Sales.y,fill="EU_Sales"),alpha=0.5)+ geom_col(aes(x=Genre,y=JP_Sales.y,fill="JP_Sales"),alpha=0.5)+ geom_col(aes(x=Genre,y=Other_Sales.y,fill="Other_Sales"),alpha=0.5) +theme_minimal() + scale_fill_manual(values =c("Global_Sales"="slateblue","NA_Sales"="#1f77b4","EU_Sales"="lightgreen","JP_Sales"="coral","Other_Sales"="#e377c2"))+ labs(title="Genre vs Sales Throughout the World", y= "Global Sales", fill="Sales by Regon")
+```
+
+The graph shows Global Sales by Genre with the different colors showing different regions. This was to compare how different regions react to different genres. From here you can see Role-Playing games have more sales in regions other than NA. However for the rest of the genres it seems NA is the highest. Below you can see a table showing the top 5 means of each regions sales grouped by Genre.
+
+##### **Descriptive Stats**
+
+```{r}
+# Group by Genre and summarize the mean sales for each region
+df3_summary <- summarize(
+  group_by(Total_Top_500, Genre),
+  Global_Sales_Mean = mean(Global_Sales.y),
+  NA_Sales_Mean = mean(NA_Sales.y),
+  EU_Sales_Mean = mean(EU_Sales.y),
+  JP_Sales_Mean = mean(JP_Sales.y),
+  Other_Sales_Mean = mean(Other_Sales.y)
+)
+# Arrange Descending 
+df3_summary_sorted <- arrange(df3_summary, desc(Global_Sales_Mean))
+
+# Display the top 5 rows
+Df3 <- head(df3_summary_sorted, 5)
+
+my_nice_table(your_table=Df3,nice_title = "Mean Sales by Genre")
+
+```
+
+#### **Global Sales by Rank and Platform**
+
+```{r fig.height=4, fig.width=5}
+# Make graph
+ggplot(Total_Top_500) + geom_point(aes(x= -Rank,y=Global_Sales.y,color=Platform))+ theme_minimal() + labs(title="Global Sales by Rank and Platform",x="Rank", y="Global Sales (millions in $)") 
+```
+
+This graph is left skewed showing lower rank correlating with higher global sales. You can see that a Wii game had the highest sales by far. There is negative correlation of `r cor(Total_Top_500$Rank,Total_Top_500$Global_Sales.y)` showing that lower rank correlates to higher global sales.
+
+##### **Descriptive Stats**
+
+```{r echo=FALSE}
+# Correlation value
+cor(Total_Top_500$Rank,Total_Top_500$Global_Sales.y)
+```
+
+### **6. Reproducibility**
+
+I ensured reproducibility by putting many comments to describe the code. I also used image address instead of downloading the image. This means it should be simple to reproduce my code and knit the file.
+
+### **7. Choice Elements**
+
+I used 10 in line code within the report the first 5 can be seen in the end of section 2 and start of section 4. In line 122 I merged two datasets together. I formatted strings and parsed them in the first part of the data preparation section. I also used a for loop in line 90-91. I used if statements throughout but the first instance is at line 68. I used functions as well the first was the nicetable function then the second function was at start of section 2 to normalize, and lastly a third function to make table with variable names, types, and a description.
+
+### **8. Conclusion**
+
+In conclusion there is a lot that correlates to a success of a game's sales. It seems that creating less but more quality games is what constitutes to a successful franchise. For instance how madden nfl has 96 games but is still only #5 in global sales. Whereas Franchise like Super Mario only contain 27 games but is #3. Also by genre, publisher, and platform, higher sales correlate to higher average ranks. Also, shooter and sports genres have the highest sales and are in the lowest ranks. The highest-ranked games with sales are on the Nintendo, Sony, and Microsoft consoles.
+
+### **9. References**
+
+Accueil. “Wii Sports - Nintendo Selects.” Auchan.fr, 2016, www.auchan.fr/wii-sports-nintendo-selects/pr-C378104. Accessed 16 Nov. 2024.
+
+“Video Game Charts, Game Sales, Top Sellers, Game Data - VGChartz.” Www.vgchartz.com, www.vgchartz.com/.“Video Game Sales.”
+
+Www.kaggle.com, www.kaggle.com/datasets/gregorut/videogamesales/data.
